@@ -1,5 +1,6 @@
 #include "proxy_app.h"
 #include <iostream>
+#include <unistd.h>
 #include "platform/log.h"
 
 ProxyApp::ProxyApp(Envs envs) : App(envs)
@@ -21,6 +22,7 @@ int ProxyApp::Init(const Envs& envs)
 int ProxyApp::Proc(const Envs& envs)
 {
     LogInfo("proxy %d proc", envs.app_id);
+    sleep(3);
     return 0;
 }
 

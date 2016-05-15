@@ -2,9 +2,14 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/resource.h>
 #include <iostream>
+#include <fcntl.h>
+#include <errno.h>
+#include <string>
+#include <sstream>
 #include "log.h"
 
 #define LOG_PATH "log"
@@ -18,14 +23,6 @@
 bool App::m_running = false;
 int App::Start(int argc, char* argv[])
 {
-    if (LogInit(GlobalLog(), LOG_PATH, LOG_BASE_NAME))
-    {
-        std::cout<<"log init failed, app start failed"<<std::endl;
-        return -1;
-    }
-    LogConf conf;
-    conf.level = LOG_LEVEL;
-    LogRefresh(GlobalLog(), conf);
     if (InternalInit(argc, argv) != 0)
     {
         LogError("InternalInit error, start app failed");
@@ -36,10 +33,11 @@ int App::Start(int argc, char* argv[])
         LogError("Init error, start app failed");
         return -1;
     }
-    Loop();
+    MainLoop();
     Fini(m_envs);
     LogInfo("app exited");
     LogFini(GlobalLog());
+    close(m_pidfd);
     return 0;
 }
 
@@ -53,6 +51,7 @@ void App::SigHandler(int sig)
 {
     if (sig == SIGTERM)
     {
+        LogInfo("catch SIGTERM");
         Stop();
     }
 }
@@ -88,7 +87,8 @@ void App::MakeDaemon()
         LogError("getrlimit failed");
         exit(-1);
     }
-    for (int i = 0; i < limit.rlim_max; ++i)
+    close(0);
+    for (int i = 3; i < limit.rlim_max; ++i)
     {
         close(i);
     }
@@ -115,9 +115,70 @@ int App::InternalInit(int argc, char* argv[])
     {
         MakeDaemon();
     }
+    if (LogInit(GlobalLog(), LOG_PATH, LOG_BASE_NAME))
+    {
+        std::cout<<"log init failed, app start failed"<<std::endl;
+        return -1;
+    }
+    LogConf conf;
+    conf.level = LOG_LEVEL;
+    LogRefresh(GlobalLog(), conf);    
+    LogInfo("start app %s", m_envs.app_name.c_str());
+    SetSignal();
+    return MakePidFile();
 }
 
-int App::Loop()
+#define LOCKMODE (S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH)
+int App::MakePidFile()
+{
+    if (m_envs.app_name == "")
+    {
+        LogError("app_name can not be nil");
+        return -1;
+    }
+    std::ostringstream oss;
+    oss.str("");
+    oss<<"/tmp/"<<m_envs.app_name<< "_"<<m_envs.app_id<<".pid";
+    std::string pidfile = oss.str();
+    int m_pidfd = open(pidfile.c_str(), O_RDWR|O_CREAT, LOCKMODE);
+    if (m_pidfd < 0)
+    {
+        LogError("can not create pidfile %s", pidfile.c_str());
+        return -1;
+    }
+    LogInfo("create pid file %s", pidfile.c_str());
+    int ret = LockFile(m_pidfd);
+    if (ret < 0)
+    {
+        if (errno == EACCES || errno == EAGAIN)
+        {
+            std::cout<<"\nprogram is already running"<<std::endl;
+            LogError("program is already running");
+            close(m_pidfd);
+            return -1;
+        }
+        std::cout<<"can not lock pidfile"<<pidfile.c_str()<<std::endl;
+        LogError("can not lock pidfile %s", pidfile.c_str());
+        close(m_pidfd);
+        return -1;
+    }
+    char buf[16];
+    int len = snprintf(buf, sizeof(buf), "%ld", (long)getpid());
+    write(m_pidfd, buf, len);
+    return 0;
+}
+
+int App::LockFile(int fd)
+{
+    struct flock fl;
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0;
+    return fcntl(fd, F_SETLK, &fl);
+}
+
+int App::MainLoop()
 {
     m_running = true;
     while (m_running)
