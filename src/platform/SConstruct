@@ -1,0 +1,6 @@
+StaticLibrary(
+    target = 'platform',
+    source = [
+        Glob('*.cpp')
+    ]
+)

@@ -1,0 +1,15 @@
+Program(
+    target = 'proxy',
+    source = [
+        Glob("*.cpp")
+    ],
+    CPPPATH = [
+        '..'
+    ],
+    LIBS = [
+        'platform'
+    ],
+    LIBPATH = [
+        '../platform/'
+    ]
+)
