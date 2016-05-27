@@ -1,0 +1,15 @@
+Program(
+    target = 'server',
+    source = [
+        Glob("*.cpp")
+    ],
+    CPPPATH = [
+        '..'
+    ],
+    LIBS = [
+        'platform'
+    ],
+    LIBPATH = [
+        '../platform/'
+    ]
+)
