@@ -2,13 +2,7 @@
 #define _EPOLL_H_
 
 static const int kMaxEpollEvent = 4096;
-struct EpollEvent
-{
-    int fd;
-    void* callback;
-    int events;
-};
-
+typedef struct epoll_event EpollEvent;
 class EventBuffer
 {
 public:
@@ -32,10 +26,6 @@ public:
         _epoller = epoller;
     }
 
-    void SetRead(EventListener* listener)
-    {
-        _listener = listener;
-    }
 private:
     int Accept();
     EventBuffer* _read_buf;
@@ -50,15 +40,14 @@ public:
     Epoller(Acceptor* acceptor);
     virtual ~Epoller();
     int Create();
-    void Destory(); 
+    void Destroy();
     int Dispatch();
     int Add(int fd, EpollEvent ev);
     int Mod(int fd, EpollEvent ev);
-    int Del(int fd);
+    int Del(int fd, EpollEvent ev);
 private:
-    struct epoll_event EventTranslate(EpollEvent ev);
     int _epfd;
-    struct epoll_event* _events;
+    EpollEvent* _events;
     Acceptor* _acceptor;
 };
 #endif

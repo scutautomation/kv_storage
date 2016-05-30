@@ -1,4 +1,17 @@
 #include "epoller.h"
+#include <iostream>
+#include <sys/epoll.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdio.h>
+#include "log.h"
 
 Acceptor::Acceptor(int fd, EventBuffer* read_buf, EventBuffer* write_buf) : _fd(fd), 
          _read_buf(read_buf), _write_buf(write_buf), _epoller(NULL)
@@ -13,14 +26,19 @@ Acceptor::~Acceptor()
 
 int Acceptor::OnCanRead(EpollEvent ev)
 {
-    if (ev.fd == _fd)
+    LogInfo("sockfd:%d, new fd:%d", _fd, ev.data.fd);
+    if (ev.data.fd == _fd)
     {
+        LogInfo("recv new connection");
         return Accept();
     }
+    LogInfo("can read from %d", ev.data.fd);
     if (!_read_buf)
     {
+        LogError("read buffer is null");
         return -1;
     }
+    //todo:读取固定大小数据放入bufer，没有数据时读取失败需要关闭fd
     return _read_buf->Push();
 }
 
@@ -28,6 +46,7 @@ int Acceptor::OnCanWrite(EpollEvent ev)
 {
     if (!_write_buf)
     {
+        LogError("write buffer is null");
         return -1;
     }
     // pop data, and write
@@ -43,9 +62,9 @@ int Acceptor::Accept()
     struct sockaddr_in client_addr;
     socklen_t sock_len = sizeof(client_addr);
     int fd = accept(_fd, reinterpret_cast<struct sockaddr*>(&client_addr), 
-                    &sock_len)
+                    &sock_len);
     EpollEvent ev;
-    ev.fd = fd;
+    ev.data.fd = fd;
     ev.events = EPOLLIN;
     _epoller->Add(fd, ev);
     return 0;
@@ -63,8 +82,12 @@ Epoller::~Epoller()
 
 int Epoller::Create()
 {
-    typedef struct epoll_event EEVENT;
-    _events = new EEVENT[kMaxEpollEvent];
+    if (!_acceptor)
+    {
+        return -1;
+    }
+    _acceptor->SetEpoller(this);
+    _events = new EpollEvent[kMaxEpollEvent];
     if (!_events)
     {
         return -1;
@@ -82,35 +105,25 @@ void Epoller::Destroy()
     if (_events)
     {
         delete[] _events;
+        _events = NULL;
     }
     close(_epfd);
 }
 
-struct epoll_event Epoller::EventTranslate(EpollEvent ev)
-{
-    struct epoll_event ep_ev;
-    ep_ev.fd = ev.fd;
-    ep_ev.data.ptr = ev.callback;
-    ep_ev.events = ev.events;
-    return ep_ev;
-}
-
 int Epoller::Add(int fd, EpollEvent ev)
 {
-    struct epoll_event ep_ev = EventTranslate(ev);
-    return epoll_ctl(_epfd, EPOLL_CTL_ADD, fd, &ep_ev);
+    LogInfo("add fd:%d, ev fd:%d", fd, ev.data.fd);
+    return epoll_ctl(_epfd, EPOLL_CTL_ADD, fd, &ev);
 }
 
 int Epoller::Del(int fd, EpollEvent ev)
 {
-    struct epoll_event ep_ev = EventTranslate(ev);
-    return epoll_ctl(_epfd, EPOLL_CTL_DEL, fd, &ep_ev);
+    return epoll_ctl(_epfd, EPOLL_CTL_DEL, fd, &ev);
 }
 
 int Epoller::Mod(int fd, EpollEvent ev)
 {
-    struct epoll_event ep_ev = EventTranslate(ev);
-    return epoll_ctl(_epfd, EPOLL_CTL_MOD, fd, &ep_ev);
+    return epoll_ctl(_epfd, EPOLL_CTL_MOD, fd, &ev);
 }
 
 int Epoller::Dispatch()
@@ -118,23 +131,14 @@ int Epoller::Dispatch()
     int evnum = epoll_wait(_epfd, _events, kMaxEpollEvent, -1);
     for (int i = 0; i < evnum; ++i)
     {
-        EpollEvent ev;
-        ev.fd = _events[i].fd;
-        ev.callback = _events[i].data.ptr;
-        ev.events = _events[i].events;
+        LogInfo("fd is %d", _events[i].data.fd);
         if (_events[i].events & EPOLLIN)
         {
-            if (_acceptor)
-            {
-                _acceptor.OnCanRead(ev);
-            }
+            _acceptor->OnCanRead(_events[i]);
         }
         else if (_events[i].events & EPOLLOUT)
         {
-            if (_acceptor)
-            {
-                _acceptor.OnCanWrite(ev);
-            }
+            _acceptor->OnCanWrite(_events[i]);
         }
         else
         {

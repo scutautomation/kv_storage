@@ -7,7 +7,8 @@ int main(int argc, char* argv[])
     Envs envs;
     envs.is_daemon = true;
     envs.app_id = 0;
-    envs.app_name = "proxy";
+    envs.app_name = "server";
+    envs.sleep_time = 200;
     ServerApp app(envs);
     return app.Start(argc, argv);
 }
