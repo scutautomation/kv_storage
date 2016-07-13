@@ -63,7 +63,7 @@ int TcpListener::Init(int epfd, App* processor)
         return -1;
     }
     // add to epoll
-    EpollEvent ev;
+    EpollEvent ev = {0};
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
     if (epoll_ctl(_epfd, EPOLL_CTL_ADD, _sockfd, &ev) < 0)

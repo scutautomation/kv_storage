@@ -123,9 +123,19 @@ void ConnectorMgr::CloseConnectors()
         {
             (*itor)->Fini();
         }
+        delete (*itor);
+        (*itor) = NULL;
     }
     _access_list.clear();
 }
 
-
+int ConnectorMgr::Fini()
+{
+    close(_epfd);
+    if (_events)
+    {
+        delete[] _events;
+        _events = NULL;
+    }
+}
 

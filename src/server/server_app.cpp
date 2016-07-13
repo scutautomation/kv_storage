@@ -68,6 +68,7 @@ int ServerApp::Fini(const Envs& envs)
     if (_conn_mgr)
     {
         _conn_mgr->CloseConnectors();
+        _conn_mgr->Fini();
         delete _conn_mgr;
         _conn_mgr = NULL;
     }

@@ -28,7 +28,7 @@ int TcpConnector::Init(int sockfd, int epfd, App* processor)
     _sockfd = sockfd;
     _processor = processor;
     _epfd = epfd;
-    EpollEvent ev;
+    EpollEvent ev = {0};
     ev.data.fd = sockfd;
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     ev.data.ptr = this;
@@ -52,7 +52,7 @@ int TcpConnector::Init(int sockfd, int epfd, App* processor)
     }
     memset(&_recv_buffer, 0, sizeof(_recv_buffer));
     _recv_buffer.buf_len = kMaxEventBufferLen;
-    _recv_buffer.buf = (char*)malloc(kMaxEventBufferLen);
+    _recv_buffer.buf = new char[kMaxEventBufferLen];
     if (!_recv_buffer.buf)
     {
         LogError("create event buffer failed");
@@ -60,7 +60,7 @@ int TcpConnector::Init(int sockfd, int epfd, App* processor)
     }
 
     _send_buffer.buf_len = kMaxEventBufferLen;
-    _send_buffer.buf = (char*)malloc(kMaxEventBufferLen);
+    _send_buffer.buf = new char[kMaxEventBufferLen];
     if (!_send_buffer.buf)
     {
         LogError("create event buffer failed");
@@ -174,5 +174,15 @@ void TcpConnector::FiniSock()
 int TcpConnector::Fini()
 {
     FiniSock();
+    if (_recv_buffer.buf)
+    {
+        delete[] _recv_buffer.buf;
+        memset(&_recv_buffer, 0, sizeof(_recv_buffer));
+    }
+    if (_send_buffer.buf)
+    {
+        delete[] _send_buffer.buf;
+        memset(&_send_buffer, 0, sizeof(_send_buffer));
+    }
     return 0;
 }
