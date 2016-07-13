@@ -26,10 +26,6 @@ int TcpConnector::Init(int sockfd, App* processor)
 int TcpConnector::Init(int sockfd, int epfd, App* processor)
 {
     _sockfd = sockfd;
-    //if (!processor)
-    //{
-    //    LogError("processor can not be null");
-    //}
     _processor = processor;
     _epfd = epfd;
     EpollEvent ev;
@@ -78,7 +74,6 @@ int TcpConnector::Init(int sockfd, int epfd, App* processor)
 
 int TcpConnector::Update()
 {
-    LogDebug("tcp connector update");
     int ret = 0;
     if (_events & EPOLLIN)
     {
@@ -95,7 +90,6 @@ int TcpConnector::Update()
 
 int TcpConnector::Recv()
 {
-    LogDebug("something can be read");
     int length = 0;
     // todo: bugs here, should read by pos
     while (1)

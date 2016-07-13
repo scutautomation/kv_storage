@@ -71,13 +71,11 @@ int TcpListener::Init(int epfd, App* processor)
         LogError("add _sockfd %d to epoll failed", _sockfd);
         return -1;
     }
-    LogDebug("tcp listener init end, _sockfd:%d, obj:%p", _sockfd, this);
     return 0;
 }
 
 int TcpListener::Update()
 {
-    LogDebug("tcp listener update, _sockfd:%d,obj:%p", _sockfd, this);
     if (_events & EPOLLIN)
     {
         if (Recv() < 0)
@@ -114,7 +112,7 @@ int TcpListener::Recv()
     socklen_t sock_len = sizeof(client_addr);
     int fd = accept(_sockfd, (struct sockaddr*)(&client_addr), 
                     &sock_len);
-    LogDebug("new connection come");
+    LogDebug("new connection come from:%s, fd:%d", inet_ntoa(client_addr.sin_addr), fd);
     _events &= (~EPOLLIN);
     if (fd < 0)
     {
