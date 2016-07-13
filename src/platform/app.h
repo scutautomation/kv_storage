@@ -2,6 +2,7 @@
 #define _KV_APP_H_
 #include <stdint.h>
 #include <string>
+#include "common.h"
 
 struct Envs
 {
@@ -31,6 +32,12 @@ public:
 
     // 退出时调用的函数，子类需要实现
     virtual int Fini(const Envs& envs) = 0;
+
+    // 收到客户端消息
+    virtual int OnRecvClient(ConnHead conn_head, void* buf, int32_t buf_len) = 0;
+
+    // 往客户端发送消息
+    virtual void SendToClient(ConnHead conn_head, void* buf, int32_t buf_len);
 
     // 自定义信号处理函数，子类可以不实现
     virtual void SelfDefSignal() {}

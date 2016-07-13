@@ -7,9 +7,10 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "platform/log.h"
-#include "platform/epoller.h"
+#include <stdio.h>
+#include <string.h>
 
-ServerApp::ServerApp(Envs envs) : App(envs)
+ServerApp::ServerApp(Envs envs) : App(envs), _conn_mgr(NULL)
 {
 
 }
@@ -21,49 +22,39 @@ ServerApp::~ServerApp()
 
 int ServerApp::Init(const Envs& envs)
 {
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t sock_len = sizeof(client_addr);
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(6008);
-    if (bind(sockfd, reinterpret_cast<struct sockaddr*>(&server_addr), sock_len) < 0)
+    _conn_mgr = new ConnectorMgr;
+    if (!_conn_mgr)
     {
-        LogError("bind error");
+        LogError("failed to new ConnectorMgr");
         return -1;
     }
-    if (listen(sockfd, 5) < 0)
+    int ret = _conn_mgr->Init(this);
+    if (ret < 0)
     {
-        LogError("listen error");
+        LogError("failed to init _conn_mgr");
         return -1;
     }
-    _acceptor = new Acceptor(sockfd, NULL, NULL);
-    if (!_acceptor)
-    {
-        LogError("new Acceptor failed");
-        return -1;
-    }
-    _epoller = new Epoller(_acceptor);
-    if (!_epoller)
-    {
-        LogError("new Epoller failed");
-        return -1;
-    }
-    int ret = _epoller->Create();
-    if (ret != 0)
-    {
-        LogError("epoller Create failed");
-        return -1;
-    }
-    EpollEvent ev;
-    ev.data.fd = sockfd;
-    ev.events = EPOLLIN;
-    return _epoller->Add(sockfd, ev);
+    return 0;
 }
 
 int ServerApp::Proc(const Envs& envs)
 {
-    return _epoller->Dispatch();
+    if (!_conn_mgr)
+    {
+        return -1;
+    }
+    std::cout<<"proc"<<std::endl;
+    return _conn_mgr->Update();
+}
+
+int ServerApp::OnRecvClient(ConnHead conn_head, void* buf, int32_t buf_len)
+{
+    LogInfo("______recv from client:%s", (char*)buf);
+    char sbuf[1024];
+    snprintf(sbuf, sizeof(sbuf), "_____from server");
+    // todo: pack and unpack
+    SendToClient(conn_head, sbuf, (int32_t)strlen(sbuf));
+    return 0;
 }
 
 int ServerApp::Tick(const Envs& envs)
@@ -74,14 +65,11 @@ int ServerApp::Tick(const Envs& envs)
 
 int ServerApp::Fini(const Envs& envs)
 {
-    LogInfo("server %d fini", envs.app_id);
-    if (_epoller)
+    if (_conn_mgr)
     {
-        _epoller->Destroy();
-        delete _epoller;
-        delete _acceptor;
-        _acceptor = NULL;
-        _epoller = NULL;
+        _conn_mgr->CloseConnectors();
+        delete _conn_mgr;
+        _conn_mgr = NULL;
     }
     return 0;
 }

@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <string>
 #include <sstream>
+#include "connector.h"
 #include "log.h"
 
 #define LOG_PATH "log"
@@ -17,7 +18,7 @@
     #define LOG_BASE_NAME "app.log"
 #endif
 #ifndef LOG_LEVEL
-    #define LOG_LEVEL INFO
+    #define LOG_LEVEL DEBUG
 #endif
 
 bool App::m_running = false;
@@ -191,4 +192,13 @@ int App::MainLoop()
         }
     }
     return 0;
+}
+
+void App::SendToClient(ConnHead conn_head, void* buf, int32_t buf_len)
+{
+    Connector* conn = (Connector*)conn_head.ptr;
+    if (conn)
+    {
+        conn->Send(buf, buf_len);
+    }
 }
