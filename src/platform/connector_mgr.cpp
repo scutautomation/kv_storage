@@ -138,6 +138,9 @@ int ConnectorMgr::Update()
             {
                 std::cout<<"client disconnected"<<std::endl;
                 LogDebug("client disconnected");
+                (*acc_itor)->Fini();
+                delete (*acc_itor);
+                (*acc_itor) = NULL;
                 acc_itor = m_access_list.erase(acc_itor);
             }
         }

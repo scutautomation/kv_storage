@@ -150,6 +150,10 @@ int TcpAccessor::Send(void* buf, int buf_len)
 
 void TcpAccessor::FiniSock()
 {
+    if (m_status == CONNECTOR_STATUS_DISCONNECTED)
+    {
+        return;
+    }
     EpollEvent ev = {0};
     if (epoll_ctl(m_epfd, EPOLL_CTL_DEL, m_sockfd, &ev) < 0)
     {
@@ -157,6 +161,7 @@ void TcpAccessor::FiniSock()
     }
     close(m_sockfd);
     m_status = CONNECTOR_STATUS_DISCONNECTED;
+
 }
 
 int TcpAccessor::Fini()
