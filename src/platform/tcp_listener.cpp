@@ -12,26 +12,26 @@
 #include <unistd.h>
 #include <stdio.h>
 #include "log.h"
-#include "tcp_connector.h"
+#include "tcp_accessor.h"
+#include "connector_mgr.h"
 
-TcpListener::TcpListener() : _sockfd(0), _epfd(0), _processor(NULL) {}
+TcpListener::TcpListener() : m_sockfd(0), m_epfd(0), m_conn_mgr(NULL) {}
 
 TcpListener::~TcpListener() {}
 
-int TcpListener::Init(int epfd, App* processor)
+int TcpListener::Init(int epfd, ConnectorMgr* conn_mgr)
 {
-    LogDebug("TcpListener Init");
-    if (!processor)
+    if (!conn_mgr)
     {
-        LogError("processor can not be null");
+        LogError("conn_mgr can not be null");
         return -1;
     }
-    _epfd = epfd;
-    _processor = processor;
-    _sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (_sockfd <= 0)
+    m_epfd = epfd;
+    m_conn_mgr = conn_mgr;
+    m_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (m_sockfd <= 0)
     {
-        LogError("socket failed. _sockfd:%d, errno:%d", _sockfd, errno);
+        LogError("socket failed. m_sockfd:%d, errno:%d", m_sockfd, errno);
         return -1;
     }
     struct sockaddr_in server_addr, client_addr;
@@ -39,36 +39,25 @@ int TcpListener::Init(int epfd, App* processor)
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(6008);
-    if (bind(_sockfd, (struct sockaddr*)&server_addr, sock_len) < 0)
+    if (bind(m_sockfd, (struct sockaddr*)&server_addr, sock_len) < 0)
     {
         LogError("bind error");
         return -1;
     }
-    if (listen(_sockfd, 5) < 0)
+    if (listen(m_sockfd, 5) < 0)
     {
         LogError("listen error");
         return -1;
     }
     // set nonblocking
-    int opts = fcntl(_sockfd, F_GETFL);
-    if (opts < 0)
-    {
-        LogError("get fcntl failed");
-        return -1;
-    }
-    opts |= O_NONBLOCK;
-    if (fcntl(_sockfd, F_SETFL, opts) < 0)
-    {
-        LogError("set fcntl error");
-        return -1;
-    }
+    SetNonBlocking(m_sockfd);
     // add to epoll
     EpollEvent ev = {0};
     ev.events = EPOLLIN | EPOLLET;
     ev.data.ptr = this;
-    if (epoll_ctl(_epfd, EPOLL_CTL_ADD, _sockfd, &ev) < 0)
+    if (epoll_ctl(m_epfd, EPOLL_CTL_ADD, m_sockfd, &ev) < 0)
     {
-        LogError("add _sockfd %d to epoll failed", _sockfd);
+        LogError("add m_sockfd %d to epoll failed", m_sockfd);
         return -1;
     }
     return 0;
@@ -76,68 +65,42 @@ int TcpListener::Init(int epfd, App* processor)
 
 int TcpListener::Update()
 {
-    if (_events & EPOLLIN)
+    if (m_events & EPOLLIN)
     {
-        if (Recv() < 0)
+        if (Accept() < 0)
         {
             LogError("recv new connection error");
         }
-    }
-    std::list<Connector*>::iterator itor = _connector_list.begin();
-    for (; itor != _connector_list.end(); ++itor)
-    {
-        if (*itor)
-        {
-            (*itor)->Update();
-            // remove disconnected connector
-            if ((*itor)->GetStatus() == CONNECTOR_STATUS_DISCONNECTED)
-            {
-                LogDebug("client disconnected");
-                itor = _connector_list.erase(itor);
-            }
-        }
+        m_events &= (~EPOLLIN);
     }
     return 0;
 }
 
-int TcpListener::Send(void* buf, int buf_len)
-{
-    // do nothing
-    return 0;
-}
-
-int TcpListener::Recv()
+int TcpListener::Accept()
 {
     struct sockaddr_in client_addr;
     socklen_t sock_len = sizeof(client_addr);
-    int fd = accept(_sockfd, (struct sockaddr*)(&client_addr), 
+    int fd = accept(m_sockfd, (struct sockaddr*)(&client_addr), 
                     &sock_len);
+    std::cout<<"new connection come from:"<<inet_ntoa(client_addr.sin_addr)<<",fd:"<<fd<<std::endl;
     LogDebug("new connection come from:%s, fd:%d", inet_ntoa(client_addr.sin_addr), fd);
-    _events &= (~EPOLLIN);
     if (fd < 0)
     {
-        LogError("accept error, _sockfd:%d, retfd:%d", _sockfd, fd);
+        LogError("accept error, m_sockfd:%d, retfd:%d", m_sockfd, fd);
         return -1;
     }
-    TcpConnector* conn = new TcpConnector;
-    if (!conn)
-    {
-        LogError("new access come, but failed to new TcpConnector");
-        return -1;
-    }
-    conn->Init(fd, _epfd, _processor);
-    _connector_list.push_back(conn);
+    m_conn_mgr->OnNewTcpConnect(fd);
     return 0;
 }
 
 int TcpListener::Fini()
 {
     EpollEvent ev = {0};
-    if (epoll_ctl(_epfd, EPOLL_CTL_DEL, _sockfd, &ev) < 0)
+    if (epoll_ctl(m_epfd, EPOLL_CTL_DEL, m_sockfd, &ev) < 0)
     {
         LogError("delete TcpListener from epoll failed");
     }
-    close(_sockfd);
+    close(m_sockfd);
     std::list<Connector*>::iterator itor = _connector_list.begin();
     for (; itor != _connector_list.end(); ++itor)
     {

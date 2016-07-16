@@ -15,6 +15,6 @@ public:
     int Fini(const Envs& envs);
     int OnRecvClient(ConnHead conn_head, void* buf, int32_t buf_len);
 private:
-    ConnectorMgr* _conn_mgr;
+    ConnectorMgr* m_conn_mgr;
 };
 #endif

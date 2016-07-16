@@ -10,7 +10,7 @@
 #include <errno.h>
 #include <string>
 #include <sstream>
-#include "connector.h"
+#include "net_interface.h"
 #include "log.h"
 
 #define LOG_PATH "log"

@@ -11,11 +11,11 @@
 #include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
-
+#include "tcp_accessor.h"
 #include "tcp_listener.h"
 #include "log.h"
 
-ConnectorMgr::ConnectorMgr() : _epfd(0), _events(0)
+ConnectorMgr::ConnectorMgr() : m_epfd(0), m_events(0), m_processor(NULL)
 {
 
 }
@@ -24,64 +24,79 @@ ConnectorMgr::~ConnectorMgr() {}
 
 int ConnectorMgr::Init(App* processor)
 {
-    //if (!processor)
-    //{
-    //    LogError("processor can not be null");
-    //    return -1;
-    //}
-    _epfd = epoll_create(1024);
-    if (_epfd <= 0)
+    if (!processor)
+    {
+        LogError("processor can no be null");
+        return -1;
+    }
+    m_processor = processor;
+    m_epfd = epoll_create(1024);
+    if (m_epfd <= 0)
     {
         LogError("epoll_create failed");
         return -1;
     }
-    int ret = 0;
-    TcpListener* tcp_listener = NULL;
-    do
+    m_events = new EpollEvent[kMaxEpollEvent];
+    if (!m_events)
     {
-        _events = new EpollEvent[kMaxEpollEvent];
-        if (!_events)
-        {
-            LogError("failed to new EpollEvent");
-            ret = -1;
-            break;
-        }
-        tcp_listener = new TcpListener;
-        if (!tcp_listener)
-        {
-            LogError("failed to new TcpListener");
-            ret = -1;
-            break;
-        }
-        LogDebug("tcp listener start to init");
-        int ret = tcp_listener->Init(_epfd, processor);
-        if (ret != 0)
-        {
-            LogError("tcp_listener init failed");
-            ret = -1;
-            break;
-        }
-    } while(0);
+        LogError("failed to new EpollEvent");
+        return -1;
+    }    
+    return 0;
+}
+
+TcpListener* ConnectorMgr::CreateTcpListener()
+{
+    TcpListener* tcp_listener = NULL;
+    tcp_listener = new TcpListener;
+    if (!tcp_listener)
+    {
+        LogError("failed to new TcpListener");
+        return NULL;
+    }
+    int ret = tcp_listener->Init(m_epfd, this);
     if (ret != 0)
     {
-        if (_events)
-        {
-            delete _events;
-            _events = NULL;
-        }
-        if (tcp_listener)
-        {
-            delete tcp_listener;
-        }
-        return -1;
+        LogError("tcp_listener init failed");
+        delete tcp_listener;
+        return NULL;
     }
-    _access_list.push_back(tcp_listener);
-    return 0;
+    m_listener_list.push_back(tcp_listener);
+    return tcp_listener;
+}
+
+TcpAccessor* ConnectorMgr::CreateTcpAccessor(int fd)
+{
+    TcpAccessor* conn = new TcpAccessor;
+    if (!conn)
+    {
+        LogError("new access come, but failed to new TcpAccessor");
+        return NULL;
+    }
+    int ret = conn->Init(fd, m_epfd, m_processor);
+    if (ret != 0)
+    {
+        LogError("new connection init failed");
+        delete conn;
+        return NULL;
+    }
+    m_access_list.push_back(conn);
+    return conn;
+}
+
+void ConnectorMgr::OnNewTcpConnect(int fd)
+{
+    (void)CreateTcpAccessor(fd);
 }
 
 int ConnectorMgr::Update()
 {
-    int num = epoll_wait(_epfd, _events, kMaxEpollEvent, -1);
+    if (m_access_list.size() == 0 && m_listener_list.size() == 0)
+    {
+        LogDebug("no network active, pass");
+        return -1;
+    }
+    int num = epoll_wait(m_epfd, m_events, kMaxEpollEvent, -1);
     if (num < 0)
     {
         //if (errno != EINTR)
@@ -96,46 +111,72 @@ int ConnectorMgr::Update()
     // update all access event
     for (int i = 0; i < num; ++i)
     {
-        Connector* conn = (Connector*)_events[i].data.ptr;
+        Connector* conn = (Connector*)m_events[i].data.ptr;
         if (conn)
         {
-            conn->SetEvents(_events[i].events);
+            conn->SetEvents(m_events[i].events);
         }
     }
-    // update connectors of different type(tcp, udp)
-    std::list<Connector*>::iterator itor = _access_list.begin();
-    for (; itor != _access_list.end(); ++itor)
+    // update listeners
+    std::list<NetListener*>::iterator listener_itor = m_listener_list.begin();
+    for (; listener_itor != m_listener_list.end(); ++listener_itor)
     {
-        if (*itor)
+        if (*listener_itor)
         {
-            (*itor)->Update();
+            (*listener_itor)->Update();
+        }
+    }
+    // update connectors
+    std::list<NetAccessor*>::iterator acc_itor = m_access_list.begin();
+    for (; acc_itor != m_access_list.end(); ++acc_itor)
+    {
+        if (*acc_itor)
+        {
+            (*acc_itor)->Update();
+            // remove disconnected connector
+            if ((*acc_itor)->GetStatus() == CONNECTOR_STATUS_DISCONNECTED)
+            {
+                std::cout<<"client disconnected"<<std::endl;
+                LogDebug("client disconnected");
+                acc_itor = m_access_list.erase(acc_itor);
+            }
         }
     }
     return 0;
 }
 
-void ConnectorMgr::CloseConnectors()
-{
-    std::list<Connector*>::iterator itor = _access_list.begin();
-    for (; itor != _access_list.end(); ++itor)
-    {
-        if (*itor)
-        {
-            (*itor)->Fini();
-        }
-        delete (*itor);
-        (*itor) = NULL;
-    }
-    _access_list.clear();
-}
-
 int ConnectorMgr::Fini()
 {
-    close(_epfd);
-    if (_events)
+    close(m_epfd);
+    if (m_events)
     {
-        delete[] _events;
-        _events = NULL;
+        delete[] m_events;
+        m_events = NULL;
     }
+
+    std::list<NetAccessor*>::iterator acc_itor = m_access_list.begin();
+    for (; acc_itor != m_access_list.end(); ++acc_itor)
+    {
+        if (*acc_itor)
+        {
+            (*acc_itor)->Fini();
+            delete (*acc_itor);
+            (*acc_itor) = NULL;
+        }        
+    }
+    m_access_list.clear();
+
+    std::list<NetListener*>::iterator listener_itor = m_listener_list.begin();
+    for (; listener_itor != m_listener_list.end(); ++listener_itor)
+    {
+        if (*listener_itor)
+        {
+            (*listener_itor)->Fini();
+            delete (*listener_itor);
+            (*listener_itor) = NULL;
+        }        
+    }
+    m_listener_list.clear();
+    return 0;
 }
 

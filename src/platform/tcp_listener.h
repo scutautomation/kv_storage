@@ -1,23 +1,22 @@
 #ifndef _TCP_LISTENER_H_
 #define _TCP_LISTENER_H_
-#include "connector.h"
+#include "net_interface.h"
 #include <list>
 
-class TcpListener : public Connector
+class TcpListener : public NetListener
 {
 public:
     TcpListener();
     ~TcpListener();
-    int Init(int epfd, App* processor);
+    int Init(int epfd, ConnectorMgr* conn_mgr);
     int Update();
     int Fini();
-    int Send(void* buf, int buf_len);
-    int Recv();
+    int Accept();
 private:
-    int _sockfd;
-    int _epfd;
+    int m_sockfd;
+    int m_epfd;
     std::list<Connector*> _connector_list;
-    App* _processor;
+    ConnectorMgr* m_conn_mgr;
 };
 #endif
 

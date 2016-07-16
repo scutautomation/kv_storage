@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-ServerApp::ServerApp(Envs envs) : App(envs), _conn_mgr(NULL)
+ServerApp::ServerApp(Envs envs) : App(envs), m_conn_mgr(NULL)
 {
 
 }
@@ -22,16 +22,21 @@ ServerApp::~ServerApp()
 
 int ServerApp::Init(const Envs& envs)
 {
-    _conn_mgr = new ConnectorMgr;
-    if (!_conn_mgr)
+    m_conn_mgr = new ConnectorMgr;
+    if (!m_conn_mgr)
     {
         LogError("failed to new ConnectorMgr");
         return -1;
     }
-    int ret = _conn_mgr->Init(this);
+    int ret = m_conn_mgr->Init(this);
     if (ret < 0)
     {
-        LogError("failed to init _conn_mgr");
+        LogError("failed to init m_conn_mgr");
+        return -1;
+    }
+    if (m_conn_mgr->CreateTcpListener() ==  NULL)
+    {
+        LogError("failed to create tcp listener");
         return -1;
     }
     return 0;
@@ -39,12 +44,11 @@ int ServerApp::Init(const Envs& envs)
 
 int ServerApp::Proc(const Envs& envs)
 {
-    if (!_conn_mgr)
+    if (!m_conn_mgr)
     {
         return -1;
     }
-    std::cout<<"proc"<<std::endl;
-    return _conn_mgr->Update();
+    return m_conn_mgr->Update();
 }
 
 int ServerApp::OnRecvClient(ConnHead conn_head, void* buf, int32_t buf_len)
@@ -65,12 +69,11 @@ int ServerApp::Tick(const Envs& envs)
 
 int ServerApp::Fini(const Envs& envs)
 {
-    if (_conn_mgr)
+    if (m_conn_mgr)
     {
-        _conn_mgr->CloseConnectors();
-        _conn_mgr->Fini();
-        delete _conn_mgr;
-        _conn_mgr = NULL;
+        m_conn_mgr->Fini();
+        delete m_conn_mgr;
+        m_conn_mgr = NULL;
     }
     return 0;
 }
